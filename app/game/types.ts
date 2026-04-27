@@ -23,8 +23,7 @@ export type PlayerState = {
 export type GameState = {
   players: PlayerState[];
   snake: Vec[];
-  npcFoods:    Vec[];                  // blue — NPC apples (always present, snake eats them)
-  playerFoods: Record<PlayerId, Vec>;  // colored apple per player (only that player eats it)
+  npcFood:     Vec;                    // blue — exactly 1 NPC apple, snake eats it
   size: number;
   tickMs: number;
   isOver: boolean;

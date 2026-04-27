@@ -38,8 +38,7 @@ export function useGameEngine(hostId: PlayerId) {
   // ── authoritative refs ──────────────────────────────────────────────
   const sizeRef    = useRef(INITIAL_SIZE);
   const snakeRef   = useRef<Vec[]>(INITIAL_SNAKE.map(v => ({ ...v })));
-  const npcFoodsRef     = useRef<Vec[]>([]);           // blue NPC apples
-  const playerFoodsRef  = useRef<Map<PlayerId, Vec>>(new Map()); // per-player colored apples
+  const npcFoodRef      = useRef<Vec>({ x: 8, y: 3 }); // single blue NPC apple
   const scoreRef   = useRef(0);
   const tickMsRef  = useRef(600);
   const isOverRef  = useRef(false);
@@ -70,8 +69,7 @@ export function useGameEngine(hostId: PlayerId) {
     for (const p of playersRef.current.values()) {
       if (p.alive) s.add(keyOf(p.pos));
     }
-    for (const f of npcFoodsRef.current) s.add(keyOf(f));
-    for (const f of playerFoodsRef.current.values()) s.add(keyOf(f));
+    s.add(keyOf(npcFoodRef.current));
     return s;
   }
 
@@ -84,36 +82,14 @@ export function useGameEngine(hostId: PlayerId) {
     return free[randInt(free.length)];
   }
 
-  // NPC apple count = number of alive players (minimum 1)
-  function targetNpcCount(): number {
-    return Math.max(1, playersRef.current.size);
-  }
-
-  function addNpcFood() {
+  function placeNpcFood() {
     const cell = randomFreeCell();
-    if (!cell) return;
-    npcFoodsRef.current = [...npcFoodsRef.current, cell];
-  }
-
-  function fillNpcFoods() {
-    const target = targetNpcCount();
-    npcFoodsRef.current = npcFoodsRef.current.filter((_, i) => i < target);
-    while (npcFoodsRef.current.length < target) addNpcFood();
-  }
-
-  function placePlayerFood(id: PlayerId) {
-    const cell = randomFreeCell();
-    if (!cell) return;
-    playerFoodsRef.current.set(id, cell);
+    if (cell) npcFoodRef.current = cell;
   }
 
   function initAllFoods() {
-    npcFoodsRef.current    = [];
-    playerFoodsRef.current = new Map();
-    for (const p of playersRef.current.values()) {
-      if (p.alive) placePlayerFood(p.id);
-    }
-    fillNpcFoods();
+    npcFoodRef.current = { x: 8, y: 3 };
+    placeNpcFood();
   }
 
   function spawnPlayer(id: PlayerId, color: PlayerColor): Vec {
@@ -139,8 +115,7 @@ export function useGameEngine(hostId: PlayerId) {
     return {
       players:    Array.from(playersRef.current.values()),
       snake:      snakeRef.current,
-      npcFoods:    npcFoodsRef.current,
-      playerFoods: Object.fromEntries(playerFoodsRef.current),
+      npcFood:     npcFoodRef.current,
       size:       sizeRef.current,
       tickMs:     tickMsRef.current,
       isOver:     isOverRef.current,
@@ -167,8 +142,6 @@ export function useGameEngine(hostId: PlayerId) {
     const color = PLAYER_COLORS.find(c => !usedColors.has(c)) ?? "red";
     const pos   = spawnPlayer(id, color);
     existing.set(id, { id, color, pos, alive: true });
-    placePlayerFood(id);
-    fillNpcFoods();
     rerender();
     return { color, accepted: true };
   }
@@ -203,15 +176,6 @@ export function useGameEngine(hostId: PlayerId) {
       if (snakeKeys.has(keyOf(next))) continue;  // blocked by snake body
       p.pos = next;
     }
-    // check if any player ate their personal apple
-    for (const p of players.values()) {
-      if (!p.alive) continue;
-      const pf = playerFoodsRef.current.get(p.id);
-      if (pf && eq(p.pos, pf)) {
-        scoreRef.current += 1;
-        placePlayerFood(p.id);
-      }
-    }
     pendingInputsRef.current.clear();
   }
 
@@ -225,8 +189,8 @@ export function useGameEngine(hostId: PlayerId) {
     const head   = snake[0];
     const players = playersRef.current;
 
-    // snake targets: all NPC apples + alive players (NOT personal player apples)
-    const targets: Vec[] = [...npcFoodsRef.current];
+    // snake targets: NPC apple + alive players
+    const targets: Vec[] = [npcFoodRef.current];
     for (const p of players.values()) {
       if (p.alive) targets.push(p.pos);
     }
@@ -294,9 +258,8 @@ export function useGameEngine(hostId: PlayerId) {
       }
     }
 
-    // 5. does snake eat an NPC apple?
-    const ateNpcIdx = npcFoodsRef.current.findIndex(f => eq(nextHead, f));
-    const ateFood   = ateNpcIdx !== -1;
+    // 5. does snake eat the NPC apple?
+    const ateFood = eq(nextHead, npcFoodRef.current);
 
     const willGrow = atePlayer !== null || ateFood;
 
@@ -327,8 +290,7 @@ export function useGameEngine(hostId: PlayerId) {
 
     if (ateFood) {
       scoreRef.current += 1;
-      npcFoodsRef.current = npcFoodsRef.current.filter((_, i) => i !== ateNpcIdx);
-      addNpcFood(); // replace eaten NPC apple
+      placeNpcFood();
     }
 
     if (willGrow) {
@@ -414,7 +376,7 @@ export function useGameEngine(hostId: PlayerId) {
   return {
     // state
     paused, setPaused,
-    sizeRef, snakeRef, npcFoodsRef, playerFoodsRef, scoreRef, tickMsRef,
+    sizeRef, snakeRef, npcFoodRef, scoreRef, tickMsRef,
     isOverRef, overReasonRef, playersRef,
     // loop
     startLoop, stopLoop, rafRef,

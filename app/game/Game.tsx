@@ -12,8 +12,7 @@ const CELL_EMPTY  = "rgba(255,255,255,0.055)";
 const CELL_BORDER = "1px solid rgba(255,255,255,0.06)";
 const SNAKE_HEAD  = "#7c3aed";
 const SNAKE_BODY  = "#5b21b6";
-const FOOD_NPC    = "#38bdf8";  // blue  — NPC apples (snake eats)
-// Player apple colors match player slot colors (red/yellow/green)
+const FOOD_NPC    = "#38bdf8";  // blue — NPC apple
 
 function genPlayerId() {
   return Math.random().toString(36).slice(2, 9);
@@ -41,14 +40,33 @@ function Lobby({
       height: "100dvh", width: "100dvw",
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
-      background: BG, color: "#e6edf3", gap: 24,
+      background: BG, color: "#e6edf3", gap: 20,
       fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
     }}>
       <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 2 }}>
         🐍 MULTIPLAYER SNAKE
       </div>
-      <div style={{ opacity: 0.6, fontSize: 13 }}>
-        Up to 3 players · 1 A* snake · personal + bonus + NPC apples
+
+      {/* Rules card */}
+      <div style={{
+        background: "rgba(255,255,255,0.05)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        borderRadius: 12, padding: "16px 24px",
+        fontSize: 13, lineHeight: 2, maxWidth: 360,
+        color: "#e6edf3",
+      }}>
+        <div><span style={{ color: "#7c3aed", fontWeight: 700 }}>■ Purple snake</span> — hunts you. Avoid it.</div>
+        <div><span style={{ color: "#7c3aed" }}>  </span>Gets longer &amp; faster every time it eats.</div>
+        <div style={{ marginTop: 4 }}><span style={{ color: "#38bdf8", fontWeight: 700 }}>● Blue apples</span> — what the snake hunts.</div>
+        <div style={{ marginTop: 4 }}>
+          <span style={{ color: "#ef4444", fontWeight: 700 }}>● Red</span> ·{" "}
+          <span style={{ color: "#facc15", fontWeight: 700 }}>Yellow</span> ·{" "}
+          <span style={{ color: "#22c55e", fontWeight: 700 }}>Green</span>
+          {" "}— that's you (up to 3 players).
+        </div>
+        <div style={{ marginTop: 4 }}>🎮 <strong>WASD</strong> to move.</div>
+        <div>🌀 You can phase through walls — the snake can't.</div>
+        <div>💀 Snake touches you = game over.</div>
       </div>
 
       <button
@@ -331,12 +349,6 @@ export default function Game() {
       return;
     }
 
-    if ((e.key === " " || e.code === "Space") && isHost) {
-      e.preventDefault();
-      engine.setPaused(!engine.paused);
-      return;
-    }
-
     let d: Dir | null = null;
     if (e.key === "ArrowUp"    || e.key === "w" || e.key === "W") d = "up";
     if (e.key === "ArrowDown"  || e.key === "s" || e.key === "S") d = "down";
@@ -381,7 +393,7 @@ export default function Game() {
     );
   }
 
-  const { size, snake, npcFoods, playerFoods, players, score, isOver, overReason, tickMs } = state;
+  const { size, snake, npcFood, players, score, isOver, overReason, tickMs } = state;
 
   const snakeKeyToIndex = new Map<string, number>();
   snake.forEach((v, i) => snakeKeyToIndex.set(keyOf(v), i));
@@ -390,14 +402,7 @@ export default function Game() {
   for (const p of players) {
     if (p.alive) playerKeyToColor.set(keyOf(p.pos), PLAYER_COLOR_HEX[p.color]);
   }
-  const npcFoodKeySet  = new Set(npcFoods.map(f => keyOf(f)));
-  const playerFoodKeys = new Map<string, string>(); // cellKey -> playerId
-  for (const [pid, pos] of Object.entries(playerFoods)) {
-    playerFoodKeys.set(keyOf(pos), pid);
-  }
-  // map playerId -> hex color for apple rendering
-  const playerColorMap = new Map<string, string>();
-  for (const p of players) playerColorMap.set(p.id, PLAYER_COLOR_HEX[p.color]);
+  const npcFoodKey = keyOf(npcFood);
 
   return (
     <div
@@ -439,7 +444,7 @@ export default function Game() {
         </div>
 
         <div style={{ marginLeft: "auto", opacity: 0.5, fontSize: 11 }}>
-          WASD/Arrows · {isHost ? "Space=pause · " : ""}R=restart{!isHost ? " (host only)" : ""}
+          WASD to move · R=restart{!isHost ? " (host only)" : ""}
         </div>
       </header>
 
@@ -518,10 +523,8 @@ export default function Game() {
             const si  = snakeKeyToIndex.get(k);
             const isSnake  = si !== undefined;
             const isHead   = si === 0;
-            const cellKey       = `${x},${y}`;
-            const isNpcFood     = npcFoodKeySet.has(cellKey);
-            const playerFoodOwner = playerFoodKeys.get(cellKey);
-            const isPlayerFood  = playerFoodOwner !== undefined;
+            const cellKey   = `${x},${y}`;
+            const isNpcFood = cellKey === npcFoodKey;
             const pColor   = playerKeyToColor.get(k);
 
             let bg     = CELL_EMPTY;
@@ -535,11 +538,6 @@ export default function Game() {
             }
             if (isNpcFood) {
               bg     = FOOD_NPC;
-              border = "1px solid rgba(0,0,0,0.22)";
-              radius = 999;
-            }
-            if (isPlayerFood) {
-              bg     = playerColorMap.get(playerFoodOwner!) ?? "#fff";
               border = "1px solid rgba(0,0,0,0.22)";
               radius = 999;
             }
