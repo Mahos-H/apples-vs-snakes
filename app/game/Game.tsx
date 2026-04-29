@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useGameEngine, GameState } from "./engine";
-import { Dir, PlayerId, PLAYER_COLOR_HEX, PlayerColor, AblyMsg } from "./types";
+import { Dir, PlayerId, PLAYER_COLOR_HEX, PlayerColor, AblyMsg, MsgReady, MsgCountdown } from "./types";
 import { eq, keyOf } from "./utils";
 import { connectAbly, AblyChannel } from "./ably";
 
@@ -19,7 +19,7 @@ function genPlayerId() {
 }
 
 function genRoomCode() {
-  return Math.random().toString(36).slice(2, 6).toUpperCase();
+  return Math.random().toString(36).slice(2, 10).toUpperCase().slice(0, 8);
 }
 
 // ─── Lobby screen ─────────────────────────────────────────────────────────────
@@ -35,6 +35,16 @@ function Lobby({
   connecting?: boolean;
 }) {
   const [code, setCode] = useState("");
+  const trimmedCode = code.trim().toUpperCase();
+
+  function handleHostClick() {
+    if (!connecting) onHost();
+  }
+
+  function handleJoinClick() {
+    if (!connecting && trimmedCode.length >= 4) onJoin(trimmedCode);
+  }
+
   return (
     <div style={{
       height: "100dvh", width: "100dvw",
@@ -42,6 +52,8 @@ function Lobby({
       alignItems: "center", justifyContent: "center",
       background: BG, color: "#e6edf3", gap: 20,
       fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
+      // Prevent iOS from treating this as a scroll container that eats taps
+      overflowY: "visible",
     }}>
       <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 2 }}>
         🐍 MULTIPLAYER SNAKE
@@ -64,14 +76,13 @@ function Lobby({
           <span style={{ color: "#22c55e", fontWeight: 700 }}>Green</span>
           {" "}— that's you (up to 3 players).
         </div>
-        <div style={{ marginTop: 4 }}>🎮 <strong>WASD</strong> to move.</div>
+        <div style={{ marginTop: 4 }}>🎮 Use the D-pad to move on mobile.</div>
         <div>🌀 You can phase through walls — the snake can't.</div>
         <div>💀 Snake touches you = game over.</div>
       </div>
 
       <button
-        onClick={onHost}
-        disabled={connecting}
+        onClick={handleHostClick}
         style={btnStyle(connecting ? "#555" : "#7c3aed")}
       >
         {connecting ? "Connecting…" : "Create Room (Host)"}
@@ -80,8 +91,12 @@ function Lobby({
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <input
           value={code}
-          onChange={e => setCode(e.target.value.toUpperCase().slice(0, 6))}
+          onChange={e => setCode(e.target.value.toUpperCase().slice(0, 8))}
           placeholder="Room code"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          autoComplete="off"
+          spellCheck={false}
           style={{
             padding: "8px 12px", borderRadius: 8,
             background: "rgba(255,255,255,0.07)",
@@ -91,8 +106,7 @@ function Lobby({
           }}
         />
         <button
-          onClick={() => !connecting && code.length >= 4 && onJoin(code)}
-          disabled={connecting}
+          onClick={handleJoinClick}
           style={btnStyle(connecting ? "#555" : "#0ea5e9")}
         >
           {connecting ? "Connecting…" : "Join Room"}
@@ -112,7 +126,7 @@ function btnStyle(color: string): React.CSSProperties {
     background: color, border: "none",
     color: "#fff", fontWeight: 700, fontSize: 15,
     cursor: "pointer", fontFamily: "inherit",
-    letterSpacing: 1,
+    letterSpacing: 1, touchAction: "manipulation",
   };
 }
 
@@ -122,14 +136,23 @@ function WaitingRoom({
   players,
   isHost,
   onStart,
+  onToggleReady,
+  myId,
   myColor,
+  readySet,
 }: {
   roomCode: string;
   players: { id: PlayerId; color: PlayerColor }[];
   isHost: boolean;
   onStart: () => void;
+  onToggleReady: () => void;
+  myId: PlayerId;
   myColor: PlayerColor | null;
+  readySet: Set<PlayerId>;
 }) {
+  const allReady = players.filter(p => p.id !== players[0]?.id).every(p => readySet.has(p.id));
+  const canStart = isHost && players.length >= 1 && (players.length === 1 || allReady);
+
   return (
     <div style={{
       height: "100dvh", width: "100dvw",
@@ -141,35 +164,46 @@ function WaitingRoom({
       <div style={{ fontSize: 22, fontWeight: 800 }}>Room: <span style={{ color: "#a78bfa" }}>{roomCode}</span></div>
       <div style={{ opacity: 0.55, fontSize: 12 }}>Share this code with up to 2 friends</div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 200 }}>
-        {players.map(p => (
-          <div key={p.id} style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 14px", borderRadius: 8,
-            background: "rgba(255,255,255,0.06)",
-            border: `1px solid ${PLAYER_COLOR_HEX[p.color]}44`,
-          }}>
-            <div style={{
-              width: 14, height: 14, borderRadius: 3,
-              background: PLAYER_COLOR_HEX[p.color],
-            }} />
-            <span style={{ opacity: 0.85 }}>{p.id === players[0].id ? "Host" : "Guest"}</span>
-            {p.color === myColor && <span style={{ opacity: 0.5, fontSize: 11 }}>(you)</span>}
-          </div>
-        ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 220 }}>
+        {players.map((p, i) => {
+          const isMe = p.id === myId;
+          const isReady = i === 0 || readySet.has(p.id); // host always "ready"
+          return (
+            <div key={p.id} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "8px 14px", borderRadius: 8,
+              background: "rgba(255,255,255,0.06)",
+              border: `1px solid ${PLAYER_COLOR_HEX[p.color]}44`,
+            }}>
+              <div style={{
+                width: 14, height: 14, borderRadius: 3,
+                background: PLAYER_COLOR_HEX[p.color],
+              }} />
+              <span style={{ opacity: 0.85, flex: 1 }}>
+                {i === 0 ? "Host" : "Guest"}{isMe ? " (you)" : ""}
+              </span>
+              <span style={{ fontSize: 12, opacity: isReady ? 1 : 0.35 }}>
+                {isReady ? "✅ ready" : "⏳ waiting"}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
-      {isHost && (
+      {isHost ? (
         <button
-          onClick={onStart}
-          disabled={players.length < 1}
-          style={btnStyle(players.length >= 1 ? "#22c55e" : "#444")}
+          onClick={() => { if (canStart) onStart(); }}
+          style={btnStyle(canStart ? "#22c55e" : "#444")}
         >
-          Start Game ({players.length}/3)
+          {allReady || players.length === 1 ? `Start Game (${players.length}/3)` : "Waiting for players…"}
         </button>
-      )}
-      {!isHost && (
-        <div style={{ opacity: 0.5, fontSize: 13 }}>Waiting for host to start…</div>
+      ) : (
+        <button
+          onClick={onToggleReady}
+          style={btnStyle(readySet.has(myId) ? "#555" : "#0ea5e9")}
+        >
+          {readySet.has(myId) ? "✅ Ready! (click to unready)" : "Click when Ready"}
+        </button>
       )}
     </div>
   );
@@ -197,6 +231,9 @@ export default function Game() {
   const rootRef     = useRef<HTMLDivElement | null>(null);
   const [hasFocus, setHasFocus] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [countdown, setCountdown]     = useState<number | null>(null);
+  const [readySet, setReadySet]       = useState<Set<PlayerId>>(new Set());
 
   // host-only engine
   const engine = useGameEngine(myId);
@@ -256,6 +293,13 @@ export default function Game() {
         if (msg.type === "PLAYER_INPUT") {
           engine.receiveInput(msg.playerId, msg.dir);
         }
+        if (msg.type === "PLAYER_READY") {
+          setReadySet(prev => {
+            const next = new Set(prev);
+            if (msg.ready) next.add(msg.playerId); else next.delete(msg.playerId);
+            return next;
+          });
+        }
       });
 
       setScreen("waiting");
@@ -268,15 +312,16 @@ export default function Game() {
 
   // ── Guest: join room ─────────────────────────────────────────────────
   async function handleJoin(code: string) {
-    console.log("[GUEST] joining", code);
+    const trimmed = code.trim().toUpperCase();
+    console.log("[GUEST] joining", trimmed);
     setLobbyError('');
     setConnecting(true);
     try {
-      const ch = await connectAbly(code);
+      const ch = await connectAbly(trimmed);
       console.log("[GUEST] connected");
       setConnecting(false);
       channelRef.current = ch;
-      setRoomCode(code);
+      setRoomCode(trimmed);
       setIsHost(false);
 
       ch.subscribe((msg: AblyMsg) => {
@@ -290,8 +335,16 @@ export default function Game() {
           setMyColor(msg.color);
           setScreen("waiting");
         }
+        if (msg.type === "COUNTDOWN") {
+          if (msg.count > 0) {
+            setCountdown(msg.count);
+          } else {
+            setCountdown(null);
+            setGameStarted(true);
+          }
+        }
         if (msg.type === "GAME_STATE") {
-          setScreen("playing");
+          if (screen !== "playing") setScreen("playing");
           setRenderedState(msg.state);
           setWaitingPlayers(msg.state.players.map(p => ({ id: p.id, color: p.color })));
         }
@@ -308,14 +361,48 @@ export default function Game() {
 
   // ── Host: start game ─────────────────────────────────────────────────
   function handleStart() {
-    console.log("[HOST] handleStart called, players:", engine.playersRef.current.size);
     engine.resetGame();
-    engine.startLoop();
+    engine.stopLoop();
+    setGameStarted(false);
+    setCountdown(null);
     setScreen("playing");
-    // broadcast initial state
     const state = engine.buildState();
     channelRef.current?.publish({ type: "GAME_STATE", state });
     setRenderedState(state);
+  }
+
+  // ── Host: click-to-start → countdown → go ──────────────────────────
+  function handleGameScreenClick() {
+    rootRef.current?.focus({ preventScroll: true });
+    setHasFocus(true);
+    if (gameStarted || !isHost) return;
+    // broadcast countdown 3-2-1-0 then start loop
+    let n = 3;
+    setCountdown(n);
+    channelRef.current?.publish({ type: "COUNTDOWN", count: n });
+    const iv = setInterval(() => {
+      n -= 1;
+      setCountdown(n);
+      channelRef.current?.publish({ type: "COUNTDOWN", count: n });
+      if (n <= 0) {
+        clearInterval(iv);
+        setCountdown(null);
+        setGameStarted(true);
+        engine.startLoop();
+      }
+    }, 1000);
+  }
+
+  // ── Guest: toggle ready ───────────────────────────────────────────────
+  function handleToggleReady() {
+    const isReady = readySet.has(myId);
+    channelRef.current?.publish({ type: "PLAYER_READY", playerId: myId, ready: !isReady });
+    // optimistic local update
+    setReadySet(prev => {
+      const next = new Set(prev);
+      if (isReady) next.delete(myId); else next.add(myId);
+      return next;
+    });
   }
 
   // ── Input: guests publish dir, host calls engine directly ────────────
@@ -340,8 +427,10 @@ export default function Game() {
     if (e.key === "r" || e.key === "R") {
       e.preventDefault();
       if (isHost) {
+        engine.stopLoop();
         engine.resetGame();
-        engine.startLoop();
+        setGameStarted(false);
+        setCountdown(null);
         const state = engine.buildState();
         channelRef.current?.publish({ type: "GAME_STATE", state });
         setRenderedState(state);
@@ -356,6 +445,30 @@ export default function Game() {
     if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") d = "right";
     if (!d) return;
     e.preventDefault();
+    tryMovePlayer(d);
+  }
+
+  // ── Touch / swipe controls ───────────────────────────────────────────
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function onTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+  }
+
+  function onTouchEnd(e: React.TouchEvent) {
+    if (!touchStartRef.current) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartRef.current.x;
+    const dy = t.clientY - touchStartRef.current.y;
+    touchStartRef.current = null;
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return; // tap, not swipe
+    let d: Dir;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      d = dx > 0 ? "right" : "left";
+    } else {
+      d = dy > 0 ? "down" : "up";
+    }
     tryMovePlayer(d);
   }
 
@@ -378,7 +491,10 @@ export default function Game() {
         players={waitingPlayers}
         isHost={isHost}
         onStart={handleStart}
+        onToggleReady={handleToggleReady}
+        myId={myId}
         myColor={myColor}
+        readySet={readySet}
       />
     );
   }
@@ -405,11 +521,15 @@ export default function Game() {
   const npcFoodKey = keyOf(npcFood);
 
   return (
+    <>
+      <style>{`@keyframes pop { from { transform: scale(1.6); opacity: 0.4; } to { transform: scale(1); opacity: 1; } }`}</style>
     <div
       ref={rootRef}
       tabIndex={0}
       onKeyDown={onKeyDown}
       onFocus={() => setHasFocus(true)}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       style={{
         height: "100dvh", width: "100dvw",
         display: "flex", flexDirection: "column",
@@ -467,22 +587,87 @@ export default function Game() {
             position: "relative",
           }}
         >
-          {!hasFocus && (
+          {/* Countdown overlay */}
+          {countdown !== null && countdown > 0 && (
+            <div style={{
+              position: "absolute", inset: 0,
+              display: "grid", placeItems: "center",
+              background: "rgba(0,0,0,0.6)", borderRadius: 14,
+              backdropFilter: "blur(4px)",
+              zIndex: 8, userSelect: "none",
+            }}>
+              <div style={{
+                fontSize: 96, fontWeight: 800, lineHeight: 1,
+                color: countdown === 1 ? "#ef4444" : countdown === 2 ? "#facc15" : "#22c55e",
+                textShadow: "0 0 40px currentColor",
+                animation: "pop 0.4s ease-out",
+              }}>
+                {countdown}
+              </div>
+            </div>
+          )}
+
+          {/* Click-to-start overlay (host only, before countdown) */}
+          {!gameStarted && countdown === null && isHost && (
+            <div
+              onPointerDown={handleGameScreenClick}
+              style={{
+                position: "absolute", inset: 0,
+                display: "grid", placeItems: "center",
+                background: "rgba(0,0,0,0.65)", borderRadius: 14,
+                backdropFilter: "blur(3px)",
+                cursor: "pointer", zIndex: 5, userSelect: "none",
+              }}
+            >
+              <div style={{
+                padding: "20px 36px", borderRadius: 12,
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                textAlign: "center", lineHeight: 1.8,
+              }}>
+                <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Ready!</div>
+                <div style={{ opacity: 0.7, fontSize: 13 }}>Click to start countdown</div>
+              </div>
+            </div>
+          )}
+          {/* Waiting overlay (guests before game starts) */}
+          {!gameStarted && countdown === null && !isHost && (
+            <div style={{
+              position: "absolute", inset: 0,
+              display: "grid", placeItems: "center",
+              background: "rgba(0,0,0,0.55)", borderRadius: 14,
+              backdropFilter: "blur(3px)",
+              zIndex: 5, userSelect: "none",
+            }}>
+              <div style={{
+                padding: "16px 28px", borderRadius: 12,
+                background: "rgba(255,255,255,0.07)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                textAlign: "center", opacity: 0.85, fontSize: 14,
+              }}>
+                ⏳ Waiting for host to start…
+              </div>
+            </div>
+          )}
+          {/* Refocus overlay (lost focus mid-game) */}
+          {gameStarted && !hasFocus && countdown === null && (
             <div
               onPointerDown={() => { rootRef.current?.focus({ preventScroll: true }); setHasFocus(true); }}
               style={{
                 position: "absolute", inset: 0,
                 display: "grid", placeItems: "center",
-                background: "rgba(0,0,0,0.6)", borderRadius: 14,
+                background: "rgba(0,0,0,0.45)", borderRadius: 14,
+                backdropFilter: "blur(2px)",
                 cursor: "pointer", zIndex: 5, userSelect: "none",
               }}
             >
               <div style={{
-                padding: "12px 18px", borderRadius: 10,
+                padding: "12px 20px", borderRadius: 10,
                 background: "rgba(255,255,255,0.08)",
-                border: "1px solid rgba(255,255,255,0.14)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                fontSize: 14, opacity: 0.85,
               }}>
-                Click to focus · WASD / Arrow keys
+                Click to focus · WASD to move
               </div>
             </div>
           )}
@@ -497,11 +682,34 @@ export default function Game() {
             }}>
               <div style={{ fontSize: 22, fontWeight: 800 }}>Game Over</div>
               <div style={{ opacity: 0.8, fontSize: 14, textAlign: "center", maxWidth: 320 }}>{overReason}</div>
+              {/* Per-player survival times */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 200 }}>
+                {[...players].sort((a, b) => b.survivedMs - a.survivedMs).map(p => (
+                  <div key={p.id} style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "6px 12px", borderRadius: 8,
+                    background: "rgba(255,255,255,0.06)",
+                    border: `1px solid ${PLAYER_COLOR_HEX[p.color]}44`,
+                    fontSize: 13,
+                  }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: PLAYER_COLOR_HEX[p.color] }} />
+                    <span style={{ flex: 1, opacity: 0.85 }}>
+                      {p.id === myId ? "You" : p.color}
+                    </span>
+                    <span style={{ opacity: 0.7 }}>
+                      {p.survivedMs > 0 ? `${(p.survivedMs / 1000).toFixed(1)}s` : "—"}
+                    </span>
+                    {!p.alive && <span style={{ fontSize: 11 }}>☠</span>}
+                  </div>
+                ))}
+              </div>
               {isHost && (
                 <button
                   onClick={() => {
+                    engine.stopLoop();
                     engine.resetGame();
-                    engine.startLoop();
+                    setGameStarted(false);
+                    setCountdown(null);
                     const s = engine.buildState();
                     channelRef.current?.publish({ type: "GAME_STATE", state: s });
                     setRenderedState(s);
@@ -562,6 +770,41 @@ export default function Game() {
           })}
         </div>
       </main>
+
+      {/* ── Mobile D-pad ── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 56px)",
+        gridTemplateRows: "repeat(2, 56px)",
+        gap: 6,
+        justifyContent: "center",
+        padding: "10px 0 14px",
+      }}>
+        {([
+          [null, "up",    null   ],
+          ["left","down","right"],
+        ] as (Dir | null)[][]).flat().map((dir, i) => dir ? (
+          <button
+            key={dir}
+            onPointerDown={e => { e.preventDefault(); tryMovePlayer(dir); }}
+            style={{
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              borderRadius: 10, color: "#e6edf3",
+              fontSize: 20, cursor: "pointer",
+              display: "grid", placeItems: "center",
+              WebkitTapHighlightColor: "transparent",
+              userSelect: "none",
+              touchAction: "manipulation",
+            }}
+          >
+            {dir === "up" ? "▲" : dir === "down" ? "▼" : dir === "left" ? "◀" : "▶"}
+          </button>
+        ) : (
+          <div key={i} />
+        ))}
+      </div>
     </div>
+  </>
   );
 }

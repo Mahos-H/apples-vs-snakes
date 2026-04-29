@@ -17,6 +17,7 @@ export type PlayerState = {
   color: PlayerColor;
   pos: Vec;
   alive: boolean;
+  survivedMs: number;  // ms survived this round
 };
 
 /** Full authoritative game state published by host every tick */
@@ -56,8 +57,21 @@ export type MsgJoinAck = {
   reason?: string;
 };
 
+export type MsgReady = {
+  type: "PLAYER_READY";
+  playerId: PlayerId;
+  ready: boolean;
+};
+
+export type MsgCountdown = {
+  type: "COUNTDOWN";
+  count: number; // 3, 2, 1, 0 (0 = go!)
+};
+
 export type AblyMsg =
   | MsgGameState
   | MsgPlayerInput
   | MsgJoinRequest
-  | MsgJoinAck;
+  | MsgJoinAck
+  | MsgReady
+  | MsgCountdown;
