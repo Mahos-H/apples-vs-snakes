@@ -1,4 +1,4 @@
-```
+
 # Apples vs Snakes
 
 A real-time multiplayer browser game built with Next.js and Ably. Up to three players share a room and try to stay alive while an AI snake chases them. As points go up, the snake speeds up, gets longer, and the grid expands.
@@ -95,4 +95,4 @@ app/
 ## License
 
 MIT
-```
+
