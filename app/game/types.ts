@@ -17,7 +17,6 @@ export type PlayerState = {
   color: PlayerColor;
   pos: Vec;
   alive: boolean;
-  survivedMs: number;  // ms survived this round
 };
 
 /** Full authoritative game state published by host every tick */

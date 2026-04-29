@@ -27,10 +27,6 @@ const INITIAL_SNAKE: Vec[] = [
   { x: 1, y: 3 },
 ];
 
-function randomId() {
-  return Math.random().toString(36).slice(2, 8);
-}
-
 export function useGameEngine(hostId: PlayerId) {
   const [, bumpRender] = useState(0);
   const rerender = () => bumpRender((n) => n + 1);
@@ -55,7 +51,6 @@ export function useGameEngine(hostId: PlayerId) {
   const accRef     = useRef(0);
   const rafRef     = useRef<number | null>(null);
   const pausedRef  = useRef(false);
-  const [paused, setPausedState] = useState(false);
 
   // ── callback ref: called every tick so Game.tsx can publish state ───
   const onTickRef  = useRef<((state: GameState) => void) | null>(null);
@@ -314,6 +309,7 @@ export function useGameEngine(hostId: PlayerId) {
   // ────────────────────────────────────────────────────────────────────
 
   function startLoop() {
+    stopLoop(); // prevent double loops
     function loop(t: number) {
       if (lastTRef.current == null) lastTRef.current = t;
       const dt = t - lastTRef.current;
@@ -337,7 +333,10 @@ export function useGameEngine(hostId: PlayerId) {
   }
 
   function stopLoop() {
-    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
   }
 
   // ────────────────────────────────────────────────────────────────────
@@ -366,26 +365,13 @@ export function useGameEngine(hostId: PlayerId) {
     onTickRef.current?.(buildState());
   }
 
-  function setPaused(next: boolean) {
-    pausedRef.current = next;
-    setPausedState(next);
-    lastTRef.current = null;
-    accRef.current   = 0;
-  }
-
   return {
-    // state
-    paused, setPaused,
     sizeRef, snakeRef, npcFoodRef, scoreRef, tickMsRef,
     isOverRef, overReasonRef, playersRef,
-    // loop
     startLoop, stopLoop, rafRef,
-    // player management
     addPlayer, removePlayer, receiveInput,
-    // game control
     resetGame,
     buildState,
-    // tick callback
     onTickRef,
   };
 }

@@ -11,10 +11,9 @@ import { AblyMsg } from "./types";
 declare const Ably: any; // loaded from CDN
 
 function createAblyClient(): any {
-  const key = process.env.NEXT_PUBLIC_ABLY_API_KEY;
-  if (!key) throw new Error("NEXT_PUBLIC_ABLY_API_KEY is not set in .env.local");
   if (typeof Ably === "undefined") throw new Error("Ably SDK not loaded yet — check your layout.tsx script tag");
-  return new Ably.Realtime({ key, echoMessages: false });
+  // authUrl calls your server-side API route — the real key never touches the browser
+  return new Ably.Realtime({ authUrl: "/api/ably-token", echoMessages: false });
 }
 
 export type AblyChannel = {
@@ -25,11 +24,15 @@ export type AblyChannel = {
 };
 
 export async function connectAbly(roomCode: string): Promise<AblyChannel> {
-  const client  = createAblyClient(); // fresh client per connection
+  const client  = createAblyClient();
   const channel = client.channels.get(`snake-room-${roomCode}`);
 
-  // Ably v2: channel.attach() returns a Promise, no callback
-  await channel.attach();
+  try {
+    await channel.attach();
+  } catch (e) {
+    client.close();
+    throw e;
+  }
 
   let _cb: ((msg: AblyMsg) => void) | null = null;
 

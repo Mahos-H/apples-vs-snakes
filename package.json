@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "ably": "^2.21.0",
     "next": "^16.2.3",
     "react": "^18",
     "react-dom": "^18"

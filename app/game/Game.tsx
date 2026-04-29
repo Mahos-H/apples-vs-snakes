@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useGameEngine, GameState } from "./engine";
-import { Dir, PlayerId, PLAYER_COLOR_HEX, PlayerColor, AblyMsg, MsgReady, MsgCountdown } from "./types";
+import { Dir, PlayerId, PLAYER_COLOR_HEX, PlayerColor, AblyMsg } from "./types";
 import { eq, keyOf } from "./utils";
 import { connectAbly, AblyChannel } from "./ably";
 
@@ -37,11 +37,13 @@ function Lobby({
   const [code, setCode] = useState("");
   const trimmedCode = code.trim().toUpperCase();
 
-  function handleHostClick() {
+  function handleHostClick(e: React.PointerEvent | React.MouseEvent) {
+    e.preventDefault();
     if (!connecting) onHost();
   }
 
-  function handleJoinClick() {
+  function handleJoinClick(e: React.PointerEvent | React.MouseEvent) {
+    e.preventDefault();
     if (!connecting && trimmedCode.length >= 4) onJoin(trimmedCode);
   }
 
@@ -53,7 +55,8 @@ function Lobby({
       background: BG, color: "#e6edf3", gap: 20,
       fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
       // Prevent iOS from treating this as a scroll container that eats taps
-      overflowY: "visible",
+      overflowY: "auto",
+      WebkitOverflowScrolling: "touch",
     }}>
       <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 2 }}>
         🐍 MULTIPLAYER SNAKE
@@ -82,8 +85,9 @@ function Lobby({
       </div>
 
       <button
-        onClick={handleHostClick}
+        onPointerDown={handleHostClick}
         style={btnStyle(connecting ? "#555" : "#7c3aed")}
+        disabled={connecting}
       >
         {connecting ? "Connecting…" : "Create Room (Host)"}
       </button>
@@ -106,8 +110,9 @@ function Lobby({
           }}
         />
         <button
-          onClick={handleJoinClick}
+          onPointerDown={handleJoinClick}
           style={btnStyle(connecting ? "#555" : "#0ea5e9")}
+          disabled={connecting}
         >
           {connecting ? "Connecting…" : "Join Room"}
         </button>
@@ -192,14 +197,15 @@ function WaitingRoom({
 
       {isHost ? (
         <button
-          onClick={() => { if (canStart) onStart(); }}
+          onPointerDown={e => { e.preventDefault(); if (canStart) onStart(); }}
+          disabled={!canStart}
           style={btnStyle(canStart ? "#22c55e" : "#444")}
         >
           {allReady || players.length === 1 ? `Start Game (${players.length}/3)` : "Waiting for players…"}
         </button>
       ) : (
         <button
-          onClick={onToggleReady}
+          onPointerDown={e => { e.preventDefault(); onToggleReady(); }}
           style={btnStyle(readySet.has(myId) ? "#555" : "#0ea5e9")}
         >
           {readySet.has(myId) ? "✅ Ready! (click to unready)" : "Click when Ready"}
@@ -344,7 +350,7 @@ export default function Game() {
           }
         }
         if (msg.type === "GAME_STATE") {
-          if (screen !== "playing") setScreen("playing");
+          setScreen("playing");
           setRenderedState(msg.state);
           setWaitingPlayers(msg.state.players.map(p => ({ id: p.id, color: p.color })));
         }
@@ -452,6 +458,7 @@ export default function Game() {
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   function onTouchStart(e: React.TouchEvent) {
+    e.preventDefault(); // prevent scroll/zoom stealing the touch
     const t = e.touches[0];
     touchStartRef.current = { x: t.clientX, y: t.clientY };
   }
@@ -684,7 +691,7 @@ export default function Game() {
               <div style={{ opacity: 0.8, fontSize: 14, textAlign: "center", maxWidth: 320 }}>{overReason}</div>
               {/* Per-player survival times */}
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 200 }}>
-                {[...players].sort((a, b) => b.survivedMs - a.survivedMs).map(p => (
+                {[...players].map(p => (
                   <div key={p.id} style={{
                     display: "flex", alignItems: "center", gap: 10,
                     padding: "6px 12px", borderRadius: 8,
@@ -696,16 +703,14 @@ export default function Game() {
                     <span style={{ flex: 1, opacity: 0.85 }}>
                       {p.id === myId ? "You" : p.color}
                     </span>
-                    <span style={{ opacity: 0.7 }}>
-                      {p.survivedMs > 0 ? `${(p.survivedMs / 1000).toFixed(1)}s` : "—"}
-                    </span>
                     {!p.alive && <span style={{ fontSize: 11 }}>☠</span>}
                   </div>
                 ))}
               </div>
               {isHost && (
                 <button
-                  onClick={() => {
+                  onPointerDown={e => {
+                    e.preventDefault();
                     engine.stopLoop();
                     engine.resetGame();
                     setGameStarted(false);
