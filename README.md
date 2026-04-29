@@ -3,6 +3,8 @@
 
 A real-time multiplayer browser game built with Next.js and Ably. Up to three players share a room and try to stay alive while an AI snake chases them. As points go up, the snake speeds up, gets longer, and the grid expands.
 
+## Check it Out! : [link](https://apples-vs-snakes.vercel.app/)
+
 ## How it works
 
 One player creates a room and gets an 8-character code. Others join with it. Once everyone’s ready, the host starts the game.
@@ -25,30 +27,14 @@ The host runs the game engine locally and pushes state to everyone else through 
 - React — host keeps game state in refs with a requestAnimationFrame loop, guests just render incoming state
 - No database, no backend game logic, no extra deps beyond ably
 
-## Architecture
-
-Host browser                        Guest browsers
------------                         --------------
-useGameEngine (RAF loop)
-  |-- stepSnake()
-  |-- processPlayerMoves()
-  |-- buildState()
-       |
-       v
-Ably channel  <----  PLAYER_INPUT  <----  Guest input
-       |
-       +---->  GAME_STATE  ---->  setRenderedState()
-
-Message types: GAME_STATE, PLAYER_INPUT, JOIN_REQUEST, JOIN_ACK, PLAYER_READY, COUNTDOWN.
-
 ## Setup
 
 1. Clone and install
-
+```
 git clone <repo>
 cd apples-vs-snakes
 npm install
-
+```
 2. Create an Ably account
 
 Go to https://ably.com, create an app, and copy the API key.
@@ -62,9 +48,9 @@ ABLY_API_KEY=your_key_here
 The key stays server-side. The browser gets short-lived tokens from /api/ably-token.
 
 4. Run locally
-
+```
 npm run dev
-
+```
 Open http://localhost:3000 in two browser windows to test host + guest.
 
 ## Deployment
@@ -79,7 +65,7 @@ Deploy to Vercel. Add ABLY_API_KEY in project settings. Do not use NEXT_PUBLIC_ 
 - Mobile works with an on-screen D-pad. Swipe exists, but D-pad is better.
 
 ## File structure
-
+```
 app/
   page.tsx                  Entry point
   game/
@@ -91,7 +77,7 @@ app/
   api/
     ably-token/
       route.ts              Token endpoint
-
+```
 ## License
 
 MIT
