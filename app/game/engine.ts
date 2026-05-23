@@ -4,7 +4,7 @@
  * The host runs this. Guests only send Dir inputs and render GameState.
  * Snake never wraps (walls are hard limits; hitting wall = game over).
  * Players always wrap.
- * Speed: 600ms start, -10ms per food eaten, floor 300ms.
+ * Speed: 600ms start, -10ms per food eaten, floor 100ms.
  */
 
 import { useRef, useState } from "react";
