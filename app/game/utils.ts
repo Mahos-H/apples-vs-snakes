@@ -64,7 +64,7 @@ export function computeGridSize(snakeLen: number) {
 }
 
 export function computeTickMs(score: number): number {
-  return clamp(600 - score * 10, 300, 600);
+  return clamp(600 - score * 10, 100, 600);
 }
 
 /* ─── A* (snake, no wrap, walls are hard stops) ─── */
